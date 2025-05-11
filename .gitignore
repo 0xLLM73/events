@@ -4,8 +4,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-package-lock.json # For root, if npm was ever used
+
+# LOCKFILES: Commit your chosen lockfile (e.g., pnpm-lock.yaml).
+# Ignore other package managers' lockfiles.
+package-lock.json
 yarn.lock
+# To commit pnpm-lock.yaml, ensure it's NOT listed below.
 
 # Create React App build output
 build
@@ -26,7 +30,9 @@ ui-debug.log
 functions/node_modules
 functions/lib # Compiled TypeScript
 functions/.env # For environment variables like NOTION_API_TOKEN
-functions/package-lock.json # Ignore npm lockfile in functions, assuming pnpm use
+# If functions directory also uses pnpm, its pnpm-lock.yaml will be committed unless specified here.
+# We will ignore npm's lockfile if it appears in functions:
+functions/package-lock.json
 
 # IDE / Editor specific files
 .idea
@@ -62,11 +68,11 @@ ehthumbs_vista.db
 # Coverage directory
 coverage
 
-# Terraform state files
+# Terraform (if used)
 .terraform
 terraform.tfstate
 terraform.tfstate.backup
 *.tfvars
 
-# Project IDX / Google Cloud Code specific
+# Project IDX / Google Cloud Code
 .idx
