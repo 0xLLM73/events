@@ -1,0 +1,72 @@
+# Node / Package Managers
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml # Usually committed, but can be ignored if collaborators use different pnpm versions / OS leading to conflicts
+
+# Create React App build output
+build
+
+# Firebase Emulators & Debug Logs
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+*.log
+.firebase/emulators/*
+!.firebase/emulators/emulators.json # Often useful to keep emulator config, but not runtime data
+
+# Firebase CLI state
+.firebase/hosting.*.cache
+
+# Cloud Functions build output & specific ignores
+functions/node_modules
+functions/lib # Compiled TypeScript
+functions/.env # For environment variables like NOTION_API_TOKEN
+
+# IDE / Editor specific files
+.idea
+.vscode # Except for recommended extensions if you want to share those
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+
+# Misc
+.env
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Coverage directory used by tools like Jest
+coverage
+
+# Terraform state files (if you were using Terraform as per some earlier generated files)
+.terraform
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+
+# Project IDX / Google Cloud Code specific (if applicable)
+.idx
