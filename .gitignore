@@ -14,6 +14,11 @@ yarn.lock
 # Create React App build output
 build
 
+# Environment Variables
+.env
+.env.*
+!.env.example
+
 # Firebase Emulators & Debug Logs
 firebase-debug.log
 firebase-debug.*.log
@@ -59,8 +64,6 @@ ehthumbs.db
 ehthumbs_vista.db
 
 # Misc
-.env
-.env*.local
 .env.development.local
 .env.test.local
 .env.production.local
