@@ -34,16 +34,23 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.enqueueSignupTasks = void 0;
-const functions = __importStar(require("firebase-functions"));
+const https_1 = require("firebase-functions/v2/https");
 const admin = __importStar(require("firebase-admin"));
 const functions_1 = require("firebase-admin/functions");
 // Configuration for the Cloud Tasks queue
 const TARGET_FUNCTION_NAME = 'processSignupTask'; // Name of your deployed Cloud Task handler function
-exports.enqueueSignupTasks = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
+exports.enqueueSignupTasks = (0, https_1.onCall)({
+    timeoutSeconds: 60,
+    memory: '256MiB'
+}, async (request) => {
+    if (!request.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'You must be logged in to enqueue tasks.');
     }
-    const uid = context.auth.uid;
+    const { eventIds } = request.data;
+    if (!eventIds || !Array.isArray(eventIds)) {
+        throw new https_1.HttpsError('invalid-argument', 'Event IDs must be provided as an array');
+    }
+    const uid = request.auth.uid;
     console.log(`User ${uid} requested to enqueue signup tasks.`);
     let enqueuedCount = 0;
     let skippedCount = 0;
@@ -107,7 +114,7 @@ exports.enqueueSignupTasks = functions.https.onCall(async (data, context) => {
         if (error instanceof Error) {
             detailMessage = error.message;
         }
-        throw new functions.https.HttpsError('internal', 'Failed to process event signup enqueuing.', { details: detailMessage });
+        throw new https_1.HttpsError('internal', 'Failed to process event signup enqueuing.', { details: detailMessage });
     }
 });
 //# sourceMappingURL=enqueueSignupTasks.js.map

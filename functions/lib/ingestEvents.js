@@ -1,48 +1,16 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ingestEvents = void 0;
-const functions = __importStar(require("firebase-functions"));
-const admin = __importStar(require("firebase-admin"));
+const https_1 = require("firebase-functions/v2/https");
+const firestore_1 = require("firebase-admin/firestore");
+const app_1 = require("firebase-admin/app");
 const client_1 = require("@notionhq/client");
-const puppeteer_core_1 = __importDefault(require("puppeteer-core"));
+const puppeteer_1 = __importDefault(require("puppeteer"));
 async function getBrowser() {
-    return puppeteer_core_1.default.launch({
+    return puppeteer_1.default.launch({
         headless: true,
         args: [
             '--no-sandbox',
@@ -85,22 +53,24 @@ function getNotionPropertyValue(page, propertyName, propertyType) {
         return prop.date?.start || null;
     return null;
 }
-exports.ingestEvents = functions.runWith({
-    timeoutSeconds: 300,
-    memory: '1GB'
-}).https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
+exports.ingestEvents = (0, https_1.onCall)({
+    timeoutSeconds: 540,
+    memory: '2GiB'
+}, async (request) => {
+    if (!request.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'You must be logged in to ingest events.');
     }
-    const uid = context.auth.uid;
-    const pageUrlInput = data.url;
-    if (!pageUrlInput) {
-        throw new functions.https.HttpsError('invalid-argument', 'The function must be called with a "url" argument.');
+    const { url } = request.data;
+    if (!url) {
+        throw new https_1.HttpsError('invalid-argument', 'URL is required');
     }
-    console.log(`User ${uid} requested ingestion for URL: ${pageUrlInput}`);
+    console.log(`User ${request.auth.uid} requested ingestion for URL: ${url}`);
     let processedEvents = [];
-    const notionApiKey = functions.config().notion?.api_token;
-    const notionDbId = getNotionDatabaseId(pageUrlInput);
+    // For now, let's skip the Notion API integration since we're having issues with the API token
+    // and focus on the HTML crawling approach which doesn't require external API keys
+    const notionApiKey = undefined; // Skip Notion API for now
+    console.log('Skipping Notion API integration and using HTML crawler instead');
+    const notionDbId = getNotionDatabaseId(url);
     if (notionDbId && notionApiKey) {
         console.log(`Attempting to fetch events from Notion DB: ${notionDbId}`);
         const notion = new client_1.Client({ auth: notionApiKey });
@@ -126,23 +96,23 @@ exports.ingestEvents = functions.runWith({
                 };
             });
             processedEvents = mappedResults.filter((event) => event !== null);
-            console.log(`Fetched ${processedEvents.length} events from Notion.`);
+            console.log(`User ${request.auth.uid} found ${processedEvents.length} events on page ${url}`);
         }
         catch (error) {
             console.error('Error fetching from Notion API:', error);
             if (error instanceof Error) {
-                throw new functions.https.HttpsError('internal', `Failed to fetch from Notion: ${error.message}`);
+                throw new https_1.HttpsError('internal', `Failed to fetch from Notion: ${error.message}`);
             }
-            throw new functions.https.HttpsError('internal', 'Failed to fetch data from Notion.');
+            throw new https_1.HttpsError('internal', 'Failed to fetch page');
         }
     }
     else {
-        console.log(`Not a Notion DB URL or API key/DB ID missing. Falling back to HTML crawler for URL: ${pageUrlInput}`);
+        console.log(`Not a Notion DB URL or API key/DB ID missing. Falling back to HTML crawler for URL: ${url}`);
         let browser = null;
         try {
             browser = await getBrowser();
             const page = await browser.newPage();
-            await page.goto(pageUrlInput, { waitUntil: 'networkidle2', timeout: 60000 });
+            await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
             await new Promise(r => setTimeout(r, 3000));
             const eventLinks = await page.evaluate(() => {
                 const eventsOutput = [];
@@ -178,9 +148,9 @@ exports.ingestEvents = functions.runWith({
         catch (error) {
             console.error('Error during Puppeteer crawling:', error);
             if (error instanceof Error) {
-                throw new functions.https.HttpsError('internal', `Failed to crawl: ${error.message}`);
+                throw new https_1.HttpsError('internal', `Failed to crawl: ${error.message}`);
             }
-            throw new functions.https.HttpsError('internal', 'Failed to crawl the HTML page for events.');
+            throw new https_1.HttpsError('internal', 'Failed to crawl the HTML page for events.');
         }
         finally {
             if (browser)
@@ -190,23 +160,25 @@ exports.ingestEvents = functions.runWith({
     if (processedEvents.length === 0) {
         return { message: 'No events found from the provided URL.', eventIds: [] };
     }
-    const batch = admin.firestore().batch();
+    const db = (0, firestore_1.getFirestore)((0, app_1.getApp)());
+    const batch = db.batch();
     const eventIds = [];
     try {
         for (const event of processedEvents) {
-            const eventId = `evt_${admin.firestore().collection('tmp').doc().id}`;
-            const eventRef = admin.firestore().doc(`users/${uid}/events/${eventId}`);
+            // Generate a unique ID for the event
+            const eventId = `evt_${db.collection('tmp').doc().id}`;
+            const eventRef = db.doc(`users/${request.auth.uid}/events/${eventId}`);
             batch.set(eventRef, {
                 ...event,
-                originalIngestionUrl: pageUrlInput,
+                originalIngestionUrl: url,
                 status: 'pending_schema',
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                userId: uid,
+                createdAt: firestore_1.FieldValue.serverTimestamp(),
+                userId: request.auth.uid,
             });
             eventIds.push(eventId);
         }
         await batch.commit();
-        console.log(`Successfully saved ${eventIds.length} events to Firestore for user ${uid}.`);
+        console.log(`Successfully saved ${processedEvents.length} events for user ${request.auth.uid} from ${url}`);
         return {
             message: `Successfully ingested ${eventIds.length} events. Schema discovery will follow.`,
             eventIds
@@ -215,9 +187,9 @@ exports.ingestEvents = functions.runWith({
     catch (error) {
         console.error('Error saving events to Firestore:', error);
         if (error instanceof Error) {
-            throw new functions.https.HttpsError('internal', `DB save error: ${error.message}`);
+            throw new https_1.HttpsError('internal', `DB save error: ${error.message}`);
         }
-        throw new functions.https.HttpsError('internal', 'Failed to save extracted events.');
+        throw new https_1.HttpsError('internal', 'Failed to save extracted events.');
     }
 });
 //# sourceMappingURL=ingestEvents.js.map

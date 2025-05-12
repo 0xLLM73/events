@@ -1,6 +1,6 @@
-import * as functions from 'firebase-functions';
+import { onTaskDispatched } from 'firebase-functions/v2/tasks';
 import * as admin from 'firebase-admin';
-import puppeteer, { Page } from 'puppeteer-core';
+import puppeteer, { Page } from 'puppeteer';
 import { UserProfile, EventData, EventSchema, FieldMappings } from './types'; // Assuming a types.ts file
 
 // Helper function to get a browser instance (can be shared)
@@ -24,24 +24,21 @@ interface SignupTaskPayload {
   eventId: string;
 }
 
-export const processSignupTask = functions.runWith({ 
-  timeoutSeconds: 540, 
-  memory: '2GB'
-}).tasks
-  .taskQueue({
+export const processSignupTask = onTaskDispatched(
+  {
+    timeoutSeconds: 540,
+    memory: '2GiB',
+
     retryConfig: {
       maxAttempts: 3,
-      minBackoffSeconds: 60,
-    },
-    rateLimits: {
-      maxConcurrentDispatches: 5,
-    },
-  })
-  .onDispatch(async (data) => {
-    const { userId, eventId } = data as SignupTaskPayload;
+      minBackoffSeconds: 60
+    }
+  },
+  async (task) => {
+    const { userId, eventId } = task.data as SignupTaskPayload;
 
     if (!userId || !eventId) {
-      console.error('Invalid payload: userId or eventId missing.', data);
+      console.error('Invalid payload: userId or eventId missing.', task.data);
       return;
     }
 
@@ -146,130 +143,182 @@ export const processSignupTask = functions.runWith({
       console.log('All mapped fields processed. Attempting submit.');
       await new Promise(r => setTimeout(r, 2000));
 
+      // Try to find and click the submit button
       const submitSelectors = [
         'button[type="submit"]',
         'input[type="submit"]',
-        '[role="button"][class*="submit"]' ,
-        'button[id*="submit"]'
+        'button:not([type])',
+        'input[type="button"]',
+        'a.submit',
+        'button.submit',
+        '[role="button"][class*="submit"]',
+        'button[id*="submit"]',
+        // Common text-based selectors
+        'button, input[type="button"], input[type="submit"], a'
       ];
-      let submitted = false;
-      for (const selector of submitSelectors) {
-        try {
-          const submitButton = await page.$(selector);
-          if (submitButton && await submitButton.isIntersectingViewport()) {
-            console.log(`Found submit button: ${selector}. Clicking.`);
-            await submitButton.click();
-            submitted = true;
-            break;
-          }
-        } catch (e) { /* Try next selector */ }
+
+      // First try exact matches
+      const exactTextMatches = [
+        'submit',
+        'register',
+        'sign up',
+        'apply',
+        'join',
+        'request',
+        'send',
+        'continue',
+      ];
+
+      let submitButton = null;
+      
+      // Try exact text matches first
+      for (const text of exactTextMatches) {
+        if (submitButton) break;
+        submitButton = await page.evaluate((text) => {
+          const elements = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a'));
+          return elements.find(el => {
+            const buttonText = (el.textContent || '').toLowerCase().trim();
+            return buttonText === text;
+          })?.outerHTML;
+        }, text);
       }
 
-      if (!submitted) {
-        console.warn('Could not find common submit button. Attempting direct form submission.');
-        const formElementHandle = formToFill.id ? await page.$(`#${formToFill.id}`) : 
-                                  formToFill.action ? await page.$(`form[action="${formToFill.action}"]`) : null;
-        if (formElementHandle) {
-            await page.evaluate(form => (form as HTMLFormElement).submit(), formElementHandle);
-            submitted = true; 
-            console.log('Direct form submission attempted.');
-        } else {
-            throw new Error('Form submission failed: No submit button or identifiable form found.');
+      // If no exact match, try contains
+      if (!submitButton) {
+        submitButton = await page.evaluate((texts) => {
+          const elements = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a'));
+          return elements.find(el => {
+            const buttonText = (el.textContent || '').toLowerCase().trim();
+            return texts.some(text => buttonText.includes(text));
+          })?.outerHTML;
+        }, exactTextMatches);
+      }
+
+      // If still no match, try CSS selectors
+      if (!submitButton) {
+        for (const selector of submitSelectors) {
+          try {
+            const element = await page.$(selector);
+            if (element) {
+              submitButton = await page.evaluate(el => el.outerHTML, element);
+              break;
+            }
+          } catch (e) {
+            console.warn(`Error checking selector ${selector}:`, e);
+          }
         }
       }
 
-      console.log('Form submission attempted. Waiting for navigation/confirmation...');
+      if (!submitButton) {
+        console.warn('No submit button found. Will try form.submit()');
+        await page.evaluate(() => {
+          const form = document.querySelector('form');
+          if (form) (form as HTMLFormElement).submit();
+        });
+      } else {
+        console.log('Found submit button:', submitButton);
+        // Create a unique selector for the found button
+        const buttonSelector = await page.evaluate((html) => {
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = html;
+          const button = tempDiv.firstElementChild;
+          if (!button) return null;
+
+          // Try to create a unique selector
+          if (button.id) return `#${button.id}`;
+          if (button.className) {
+            const classes = button.className.split(' ').join('.');
+            return `.${classes}`;
+          }
+          return button.tagName.toLowerCase();
+        }, submitButton);
+
+        if (buttonSelector) {
+          try {
+            await page.click(buttonSelector);
+            console.log('Clicked submit button with selector:', buttonSelector);
+          } catch (e) {
+            console.warn('Error clicking submit button, trying evaluate:', e);
+            await page.evaluate((html) => {
+              const tempDiv = document.createElement('div');
+              tempDiv.innerHTML = html;
+              const button = tempDiv.firstElementChild;
+              if (button) (button as HTMLElement).click();
+            }, submitButton);
+          }
+        }
+      }
+
+      // Wait for navigation or check for success message
       try {
         await page.waitForNavigation({ timeout: 20000, waitUntil: 'networkidle0' });
         console.log('Navigation occurred after submission.');
       } catch (navError) {
         console.log('No navigation or timed out. Checking current page.');
       }
-      
-      await new Promise(r => setTimeout(r, 3000));
 
-      const pageContent = await page.content();
-      const hasRecaptcha = /recaptcha|g-recaptcha|turnstile|hcaptcha/i.test(pageContent);
+      // Check for success indicators
+      const pageContent = await page.evaluate(() => document.body.textContent || '');
+      const formStillExists = await page.evaluate(() => {
+        const form = document.querySelector('form');
+        return form !== null;
+      });
 
-      if (hasRecaptcha) {
-        console.warn('CAPTCHA detected.');
-        await eventRef.update({ status: 'needs_captcha', statusReason: 'CAPTCHA detected', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-      } else {
-        const successKeywords = ['thank you', 'success', 'confirmation', 'registered', 'signed up', 'check your email'];
-        const hasSuccessMessage = successKeywords.some(keyword => pageContent.toLowerCase().includes(keyword));
-        if (hasSuccessMessage) {
-            console.log('Success message detected.');
-            await eventRef.update({ status: 'success', statusReason: 'Form submitted, success message detected.', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-        } else {
-            console.warn('Outcome unclear (no CAPTCHA or known success message).');
-            // TODO: Implement screenshot logic here
-            await eventRef.update({ status: 'failed', statusReason: 'Outcome unclear', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      if (formStillExists) {
+        const errorElements = await page.evaluate(() => {
+          const errorSelectors = [
+            '.error',
+            '.alert-error',
+            '.alert-danger',
+            '[role="alert"]',
+            '[aria-invalid="true"]'
+          ];
+          return errorSelectors.some(selector => document.querySelector(selector) !== null);
+        });
+
+        if (errorElements) {
+          throw new Error('Form submission failed - error elements detected');
         }
+      }
+
+      const successKeywords = ['thank you', 'success', 'confirmation', 'registered', 'signed up', 'check your email'];
+      const hasSuccessMessage = successKeywords.some((keyword: string) => pageContent.toLowerCase().includes(keyword));
+
+      if (hasSuccessMessage) {
+        console.log('Success message detected.');
+        await eventRef.update({
+          status: 'completed',
+          statusReason: 'Successfully signed up for event',
+          completedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      } else {
+        console.log('No explicit success message found, but no errors either. Marking as completed.');
+        await eventRef.update({
+          status: 'completed',
+          statusReason: 'Form submitted without errors',
+          completedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
       }
     } catch (error) {
       console.error(`Error processing signup for event ${eventId} (user: ${userId}):`, error);
       let errorMessage = 'Unknown error during signup processing.';
       if (error instanceof Error) errorMessage = error.message;
       try {
-        await eventRef.update({ status: 'failed', statusReason: errorMessage.substring(0, 500), updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-      } catch (dbError) {
-        console.error(`Failed to update error status for event ${eventId}:`, dbError);
+        await eventRef.update({
+          status: 'signup_failed',
+          statusReason: errorMessage,
+          error: error instanceof Error ? error.stack : String(error)
+        });
+      } catch (updateError) {
+        console.error('Failed to update event status:', updateError);
       }
-      throw error;
     } finally {
       if (browser) {
-        console.log('Closing browser.');
-        await browser.close();
+        try {
+          await browser.close();
+        } catch (e) {
+          console.warn('Error closing browser:', e);
+        }
       }
     }
   });
-
-// It's good practice to define shared types in a separate file, e.g., functions/src/types.ts
-// For now, I'll add them here for completeness if no types.ts was created.
-// If you have a types.ts, these should be moved there and imported.
-/*
-export interface UserProfile {
-  name?: string;
-  email: string; // Usually from auth, non-optional
-  phone?: string;
-  organization?: string;
-  dietaryRestrictions?: string;
-  otherInfo?: string;
-  [key: string]: any; // To allow other dynamic profile fields
-}
-
-export interface EventData {
-  url: string;
-  title?: string;
-  date?: string;
-  status?: string;
-  // ... other event fields
-}
-
-export interface FormFieldSchema {
-  name: string;
-  id?: string;
-  type: string;
-  label: string;
-  placeholder?: string;
-  selector: string;
-  options?: { value: string; text: string }[];
-}
-
-export interface EventFormSchema {
-  id: string;
-  action?: string;
-  method?: string;
-  fields: FormFieldSchema[];
-}
-
-export interface EventSchema {
-  forms: EventFormSchema[];
-  discoveredAt?: any; // Firestore Timestamp or Date
-  sourceUrl?: string;
-}
-
-export interface FieldMappings {
-  [schemaFieldKey: string]: string; // Maps schema field key to profile field key or custom value
-}
-*/

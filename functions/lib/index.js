@@ -33,25 +33,83 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.processSignupTask = exports.enqueueSignupTasks = exports.discoverSchema = exports.ingestEvents = void 0;
+exports.triggerSchemaDiscovery = exports.directSignupV2 = exports.processSignupTaskV2 = exports.enqueueSignupTasksV2 = exports.ingestEventsV2 = exports.signupToEventV2 = exports.processSignupTask = exports.signupToEvent = exports.enqueueSignupTasks = exports.discoverSchema = exports.ingestEvents = void 0;
 const admin = __importStar(require("firebase-admin"));
+const ingestEvents_1 = require("./ingestEvents");
+const discoverSchema_1 = require("./discoverSchema");
+const enqueueSignupTasks_1 = require("./enqueueSignupTasks");
+const signup_1 = require("./signup");
+const processSignupTask_1 = require("./processSignupTask");
+const https_1 = require("firebase-functions/v2/https");
+const firestore_1 = require("firebase-admin/firestore");
 // Initialize Firebase Admin SDK only once
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
-// Import and re-export functions from their individual files.
-// This makes the main index file cleaner and organizes functions by feature.
-// Event Ingestion Function
-const ingestEvents_1 = require("./ingestEvents");
+// Export v1 functions
 exports.ingestEvents = ingestEvents_1.ingestEvents;
-// Schema Discovery Function (Firestore Trigger)
-const discoverSchema_1 = require("./discoverSchema");
 exports.discoverSchema = discoverSchema_1.discoverSchema;
-// Task Enqueueing Function
-const enqueueSignupTasks_1 = require("./enqueueSignupTasks");
 exports.enqueueSignupTasks = enqueueSignupTasks_1.enqueueSignupTasks;
-// Task Processing Function (Cloud Task Handler)
-const processSignupTask_1 = require("./processSignupTask");
+exports.signupToEvent = signup_1.signupToEvent;
 exports.processSignupTask = processSignupTask_1.processSignupTask;
-// You can add other utility functions or groups here if needed.
+// Export v2 functions
+var signup_2 = require("./signup");
+Object.defineProperty(exports, "signupToEventV2", { enumerable: true, get: function () { return signup_2.signupToEvent; } });
+var ingestEvents_2 = require("./ingestEvents");
+Object.defineProperty(exports, "ingestEventsV2", { enumerable: true, get: function () { return ingestEvents_2.ingestEvents; } });
+var enqueueSignupTasks_2 = require("./enqueueSignupTasks");
+Object.defineProperty(exports, "enqueueSignupTasksV2", { enumerable: true, get: function () { return enqueueSignupTasks_2.enqueueSignupTasks; } });
+var processSignupTask_2 = require("./processSignupTask");
+Object.defineProperty(exports, "processSignupTaskV2", { enumerable: true, get: function () { return processSignupTask_2.processSignupTask; } });
+var directSignup_1 = require("./directSignup");
+Object.defineProperty(exports, "directSignupV2", { enumerable: true, get: function () { return directSignup_1.directSignup; } });
+// Create a manual trigger for schema discovery since we're having issues with Firestore triggers in v2
+// This function will manually trigger schema discovery for pending events
+exports.triggerSchemaDiscovery = (0, https_1.onRequest)({
+    timeoutSeconds: 540,
+    memory: '2GiB'
+}, async (req, res) => {
+    try {
+        const db = (0, firestore_1.getFirestore)();
+        const pendingEvents = await db.collectionGroup('events')
+            .where('status', '==', 'pending_schema')
+            .limit(10)
+            .get();
+        console.log(`Found ${pendingEvents.size} events pending schema discovery`);
+        const promises = [];
+        pendingEvents.forEach(doc => {
+            // Get event data from document
+            // const eventData = doc.data(); // Uncomment if needed
+            const path = doc.ref.path.split('/');
+            const userId = path[1]; // users/{userId}/events/{eventId}
+            const eventId = path[3];
+            console.log(`Processing schema for event ${eventId} for user ${userId}`);
+            // Update status to processing
+            promises.push(doc.ref.update({
+                status: 'processing_schema',
+                statusReason: 'Starting schema discovery'
+            }));
+            // TODO: Add schema discovery logic here
+            // For now, just mark as pending_mapping to allow user to map fields
+            setTimeout(() => {
+                doc.ref.update({
+                    status: 'pending_mapping',
+                    statusReason: 'Ready for field mapping'
+                });
+            }, 2000);
+        });
+        await Promise.all(promises);
+        res.status(200).send({
+            success: true,
+            processed: pendingEvents.size
+        });
+    }
+    catch (error) {
+        console.error('Error triggering schema discovery:', error);
+        res.status(500).send({
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
 //# sourceMappingURL=index.js.map

@@ -31,22 +31,12 @@ function App() {
   const [loadingAuth, setLoadingAuth] = useState(true);
 
   useEffect(() => {
-    // Actual Firebase auth listener (user will uncomment and use with their firebase.js)
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('Auth state changed:', user);
+      console.log('Auth state changed:', user ? `Logged in as ${user.email}` : 'Logged out');
       setCurrentUser(user);
       setLoadingAuth(false);
     });
     return () => unsubscribe();
-
-    // --- Simulated Auth for UI Testing (Remove when using real Firebase) ---
-    // console.log("Using simulated auth state for UI testing.");
-    // const mockUser = { uid: 'test-user-123', email: 'test@example.com' };
-    // // To test logged-in state:
-    // // setTimeout(() => { setCurrentUser(mockUser); setLoadingAuth(false); }, 500);
-    // // To test logged-out state:
-    // setTimeout(() => { setCurrentUser(null); setLoadingAuth(false); }, 500);
-    // --- End Simulated Auth ---
 
   }, []);
 

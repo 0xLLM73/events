@@ -3,8 +3,8 @@ import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-// import { auth } from '../../firebase'; // User will uncomment and setup
-// import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../../firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 
 export default function LoginForm() {
   const [email, setEmail] = useState('');
@@ -14,19 +14,12 @@ export default function LoginForm() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
-    // try {
-    //   await signInWithEmailAndPassword(auth, email, password);
-    //   // Navigation will be handled by onAuthStateChanged in App.js
-    // } catch (err) {
-    //   setError(err.message);
-    //   console.error("Login error: ", err);
-    // }
-    console.log('Login attempt with:', { email, password }); // Placeholder
-    if (email === 'test@example.com' && password === 'password') {
-        console.log('Simulated successful login')
-        // In a real app, auth state change would trigger navigation
-    } else {
-        setError('Invalid credentials (simulated)');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // Navigation will be handled by onAuthStateChanged in App.js
+    } catch (err) {
+      setError(err.message);
+      console.error("Login error: ", err);
     }
   };
 

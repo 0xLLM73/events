@@ -5,17 +5,17 @@ import Box from '@mui/material/Box';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-// import { auth } from '../firebase'; // User will uncomment and setup
-// import { signOut } from 'firebase/auth';
+import { auth } from '../firebase';
+import { signOut } from 'firebase/auth';
 
 export default function Navbar({ currentUser }) {
   const handleLogout = async () => {
-    // try {
-    //   await signOut(auth);
-    // } catch (error) {
-    //   console.error("Error signing out: ", error);
-    // }
-    console.log('Logout action triggered'); // Placeholder
+    try {
+      await signOut(auth);
+      console.log('Successfully signed out');
+    } catch (error) {
+      console.error("Error signing out: ", error);
+    }
   };
 
   return (

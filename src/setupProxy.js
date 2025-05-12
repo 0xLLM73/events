@@ -28,6 +28,7 @@ module.exports = function(app) {
       target: 'http://127.0.0.1:8080',
       changeOrigin: true,
       ws: true,
+      secure: false,
       logLevel: 'debug',
       onError: function(err, req, res) {
         console.error('[Proxy Error - Firestore]:', err);
@@ -47,7 +48,8 @@ module.exports = function(app) {
     createProxyMiddleware({
       target: 'http://127.0.0.1:5001',
       changeOrigin: true,
-      pathRewrite: { '^\/functions-api': '/' },
+      secure: false,
+      pathRewrite: { '^/functions-api': '/sign-up-203c0/us-central1' },
       logLevel: 'debug',
       onError: function(err, req, res) {
         console.error('[Proxy Error - Functions]:', err);
